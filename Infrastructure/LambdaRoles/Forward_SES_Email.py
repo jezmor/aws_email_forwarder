@@ -1,10 +1,13 @@
 import os
 import uuid
-from email.MIMEMultipart import MIMEMultipart()
-from email import message_from_string()
+import email
 import json
 import urllib.parse
 import boto3
+
+"""
+ref for some of the code used here https://blog.bytefaction.com/posts/setup-custom-private-email-relay-part1/
+"""
 
 s3 = boto3.client("s3")
 
@@ -13,7 +16,7 @@ def get_s3_email(event):
     key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
     try:
         email_object = s3.get_object(Bucket=bucket, Key=key)['Body'].read().decode('utf-8')
-        return message_from_string(email_object)
+        return email.message.Message.message_from_string(email_object)
     except Exception as e:
         print(e)
         print('Error getting object {} from bucket {}. Make sure they exist and your bucket is in the same region as this function.'.format(key, bucket))
@@ -46,7 +49,7 @@ def get_email_metadata(email_object):
     to_address = separator.join(email_object.get_all('To'))
     to_address = to_address.replace('<', '')
     to_address = to_address.replace('>', '')
-    msg = MIMEMultipart()
+    msg = email.mime.multipart.MIMEMultipart()
 
     if email_object.is_multipart():
         for payload in email_object.get_payload():
@@ -71,33 +74,23 @@ def get_email_metadata(email_object):
 
 
 
-def send_ses_email(sender_address, recipient_address, email_contents):
+def send_ses_email(message):
     ses = boto3.client("ses")
-    ses.send_email(
-        Destination={
-            'ToAddresses': [
-                recipient_address
-            ],
-        },
-        Message={
-            'Body': {
-                'Html': {
-                    'Charset': 'UTF-8',
-                    'Data': '<h1>Hello World</h1><p>This is a pretty mail with HTML formatting</p>',
-                },
-                'Text': {
-                    'Charset': 'UTF-8',
-                    'Data': 'This is for those who cannot read HTML.',
-                },
-            },
-            'Subject': {
-                'Charset': 'UTF-8',
-                'Data': 'Hello World',
-            },
-        },
-        Source=sender_address
-    )
+
+    try:
+        response = ses.send_raw_email(
+            Source = message["Source"],
+            Destinations = message['Destinations'],
+            RawMessage = {
+                'Data': message['Data']
+            }
+        )
+    except ClientError as e:
+        return e.response['Error']['Message']
+    else:
+        return "Email sent! Message ID: " + response['MessageId']
 
 def lambda_handler(event, context):
     email_data = get_s3_email(event)
+    
     

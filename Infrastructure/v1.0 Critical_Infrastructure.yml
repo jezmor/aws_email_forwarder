@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Configures the Critical Infrastructure for the Email_Service Stack.
+Parameters:
+  ParamEnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - prod
+      - dev
+      - qa
+    Description: Enter environment name; production, development, qa. Default is development.
+  ParamTempEmailDomain:
+    Type: String
+  ParamTempEmailDomainFormatted:
+    Type: String
+    Description: Include the email domain without any periods or other special characters.
+Resources:
+  DynamoUsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ParamEnvironmentName}_${ParamTempEmailDomainFormatted}_users'
+      BillingMode: PROVISIONED
+      AttributeDefinitions:
+        - AttributeName: UserId
+          AttributeType: N
+        - AttributeName: GeneratedEmailAddress
+          AttributeType: S
+        - AttributeName: UserEmailAddress
+          AttributeType: S
+      KeySchema:
+        - AttributeName: UserId
+          KeyType: HASH
+        - AttributeName: GeneratedEmailAddress
+          KeyType: HASH
+        - AttributeName: UserEmailAddress
+          KeyType: RANGE
+      LocalSecondaryIndexes:
+        - IndexName: IndexUserId
+          KeySchema:
+            - AttributeName: UserId
+              KeyType: HASH
+          Projection:
+            NonKeyAttributes: 
+              - UserId
+            ProjectionType: INCLUDE
+      TableClass: Standard
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - Key: environment
+          Value: !Ref ParamEnvironmentName
+        - Key: domain
+          Value: !Ref ParamTempEmailDomain
+        - Key: service_level
+          Value: critical_infrastructure
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+  S3BucketUserEmails:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ParamEnvironmentName}-${ParamTempEmailDomain}-user-emails'
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: environment
+          Value: !Ref ParamEnvironmentName
+        - Key: service_level
+          Value: critical_infrastructure
+        - Key: email_service
+          Value: !Sub '${ParamEnvironmentName}_${ParamTempEmailDomain}'
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+  SESInboundMail:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: inbound_mail
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+  EmailForwarderDomain:
+    Type: AWS::SES::ReceiptRule
+    Properties:
+      RuleSetName: !Ref SESInboundMail
+      Rule:
+        Name: !Sub '${ParamEnvironmentName}${ParamTempEmailDomainFormatted}SendToS3'
+        Enabled: true
+        ScanEnabled: false
+        Recipients:
+          - !Sub 'tempemail.${ParamTempEmailDomain}'
+        Actions:
+          - S3Action:
+              BucketName: !Ref S3BucketUserEmails
+              ObjectKeyPrefix: awaiting-processing/
+  ERMEmailWorkmailDomainRule:
+    Type: AWS::SES::ReceiptRule
+    Properties:
+      After: !Ref EmailForwarderDomain
+      RuleSetName: !Ref SESInboundMail
+      Rule:
+        Name: m-e36ab931a5204bb0a8d97d95adcf2103
+        Enabled: true
+        ScanEnabled: true
+        Recipients:
+          - erm.email
+          - ermemail.awsapps.com
+        Actions:
+          - WorkmailAction:
+              OrganizationArn: arn:aws:workmail:us-east-1:838812369035:organization/m-e36ab931a5204bb0a8d97d95adcf2103
+  11RunWorkmailDomainRule:
+    Type: AWS::SES::ReceiptRule
+    Properties:
+      RuleSetName: !Ref SESInboundMail
+      After: !Ref ERMEmailWorkmailDomainRule
+      Rule:
+        Name: m-9b5e45cebb5049b1a6cd879714c22a8c
+        Enabled: true
+        ScanEnabled: true
+        Recipients:
+          - 1-1.run
+          - 1-1run.awsapps.com
+        Actions:
+          - WorkmailAction:
+              OrganizationArn: arn:aws:workmail:us-east-1:838812369035:organization/m-9b5e45cebb5049b1a6cd879714c22a8c
+  QueueForwardEmail:
+    Type: AWS::SQS::Queue
+    Properties: 
+      MessageRetentionPeriod: 60
+      QueueName: !Sub '${ParamEnvironmentName}_QueueForwardEmail'
+      ReceiveMessageWaitTimeSeconds: 5
+      Tags:
+        - Key: environment
+          Value: !Ref ParamEnvironmentName
+        - Key: service_level
+          Value: critical_infrastructure
+  QueueDeleteEmail:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 60
+      QueueName: !Sub ${ParamEnvironmentName}_QueueDeleteEmail'
+      Tags:
+        - Key: environment
+          Value: !Ref ParamEnvironmentName
+        - Key: service_level
+          Value: critical_infrastructure
+Outputs:
+  DynamoDBARN:
+    Value: !Ref DynamoUsersTable
+    Export:
+      Name: !Sub '${ParamEnvironmentName}${ParamTempEmailDomainFormatted}'
