@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Creating a Lambda that will create new email aliases.
+Resources:
+  LambdaRoleCreateEmail:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /LambdaRoles/
+      Policies:
+                - PolicyName: logs
+                  PolicyDocument:
+                    Statement:
+                        Effect: Allow
+                        Action:
+                            - "logs:CreateLogGroup"
+                            - "logs:CreateLogStream"
+                            - "logs:PutLogEvents"
+                        Resource: "arn:aws:logs:*:*:*"
+                - PolicyName: lambda
+                  PolicyDocument:
+                    Statement:
+                        Effect: Allow
+                        Action:
+                            - "lambda:InvokeFunction"
+                        Resource: "*"
+                - PolicyName: createruleset
+                  PolicyDocument:
+                    Statement:
+                        Effect: Allow
+                        Action:
+                            - "ses:DescribeReceiptRuleSet"
+                            - "ses:CreateReceiptRule"
+                            - "ses:CreateReceiptRule"
+                        Resource: "*"
+                - PolicyName: createdynamorecord
+                  PolicyDocument:
+                    Statement:
+                        Effect: Allow
+                        Action:
+                          - "dynamodb:Query"
+                          - "dynamodb:PutItem"
+                        Resource: "arn:aws:dynamodb:us-east-1:838812369035:table/prod_users"
+  LambdaRoleCreateEmailInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /InstanceProfiles/
+      Roles:
+        - !Ref LambdaRoleCreateEmail
