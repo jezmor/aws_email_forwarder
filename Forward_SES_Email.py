@@ -68,12 +68,6 @@ def get_email_metadata(email_object):
     }
 
     return message
-    
-
-    if email_object["Content-Transfer-Encoding"] == "base64":
-        return base64.decodestring(body)
-    else:
-        return body
 
 
 
